@@ -1,2 +1,2 @@
 #! /bin/bash
-./snap -r generator.spec -e 1 -cdx
+./snap -r generator.spec -e 3 -cdx
