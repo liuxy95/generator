@@ -4,21 +4,21 @@ import getopt
 import random
 
 insn_list={
-'add.float.alu':['add',2,'f64'],
-'sub.float.alu':['sub',2,'f64'],
-'mul.float.alu':['mul',2,'f64'],
-'div.float.alu':['div.rn',2,'f64'],
-'min.float.alu':['min',2,'f64'],
-'max.float.alu':['max',2,'f64'],
-'neg.float.alu':['neg',1,'f64'],
-'sqrt.float.sfu':['sqrt.rn',1,'f64'],
-'abs.float.alu':['abs',1,'f64'],
-#'sin.float.sfu':['sin.approx',1,'f64'],
-#'cos.float.sfu':['cos.approx',1,'f64'],
-#'ex2.float.sfu':['ex2.approx',1,'f64'],
-#'lg2.float.sfu':['lg2.approx',1,'f64'],
-'rsqrt.float.sfu':['rsqrt.approx',1,'f64'],
-'rcp.float.sfu':['rcp.rn',1,'f64'],
+'add.float.alu':['add',2,'f32'],
+'sub.float.alu':['sub',2,'f32'],
+'mul.float.alu':['mul',2,'f32'],
+'div.float.alu':['div.rn',2,'f32'],
+'min.float.alu':['min',2,'f32'],
+'max.float.alu':['max',2,'f32'],
+'neg.float.alu':['neg',1,'f32'],
+'sqrt.float.sfu':['sqrt.rn',1,'f32'],
+'abs.float.alu':['abs',1,'f32'],
+'sin.float.sfu':['sin.approx',1,'f32'],
+'cos.float.sfu':['cos.approx',1,'f32'],
+'ex2.float.sfu':['ex2.approx',1,'f32'],
+'lg2.float.sfu':['lg2.approx',1,'f32'],
+'rsqrt.float.sfu':['rsqrt.approx.ftz',1,'f32'],
+'rcp.float.sfu':['rcp.rn',1,'f32'],
 'fma.float.mad':['fma.rn',3,'f64'],
 'mad.float.mad':['mad.rn',3,'f64'],
 'not.byte.alu':['not',1,'b32'],
@@ -43,7 +43,7 @@ insn_list={
 
 f_alu_list=['add','sub','mul','div','min','max','neg','abs']
 f_mad_list=['mad','fma']
-f_sfu_list=['sqrt','rsqrt','rcp']
+f_sfu_list=['sin','ex2','lg2','sqrt','rsqrt','cos','rcp']
 d_alu_list=['add','sub','mul','div','min','max','neg','abs','rem','sad','shr']
 d_mad_list=['mad']
 b_alu_list=['not','or','and','xor','shl']
@@ -62,6 +62,9 @@ t_r={
 'int':['%rd','%d_0','%d_1','%ropd3'],
 'float':['%rf','%f_0','%f_1','%ropf3'],
 'byte':['%rb','%ropb0','%ropb1']
+}
+t_mad={
+        'float':['%rdouble','%rmadf0','%rmadf1','%rmadf2']
 }
 #instruction class
 class Intructions:
@@ -86,7 +89,10 @@ class Intructions:
 		
 	def getInsn(self):
 		insn=self.prefix+'\t'
-		t_r_l=t_r[self.op_type]	
+                if self.insn_type == 'mad' and self.op_type == 'float':
+                    t_r_l=t_mad[self.op_type]
+                else:
+                    t_r_l=t_r[self.op_type]	
 		tmp_dst=t_r_l[0]+self.insn_num
 		if self.dst!='null':
 			tmp_dst=self.dst;
@@ -109,8 +115,12 @@ class Intructions:
 		reg='';
 		rtype='';
 		if self.op_type=='float':
-			reg='%rf'
-			rtype='%f_'
+                        if self.insn_type=='mad':
+                            reg='%rff'
+                            rtype='%ff_'
+                        else :
+			    reg='%rf'
+			    rtype='%f_'
 		elif self.op_type=='int':
 			reg='%rd'
 			rtype='%d_'
@@ -328,6 +338,15 @@ class Generator:
 			"#include<stdlib.h>\n"
 			"#include<time.h>\n\n"
 		)
+                
+                file_stream.write(
+                        "//f_alu = "+ str(self.f_alu) +"\n"
+                        "//f_mad =" + str(self.f_mad) +"\n"
+                        "//f_sfu =" + str(self.f_sfu) +"\n"
+                        "//d_alu =" + str(self.d_alu) +"\n"
+                        "//d_mad =" + str(self.d_mad) +"\n"
+                        "//b_alu =" + str(self.b_alu) +"\n"
+                )
 
 		if self.const_mem>0:
 			file_stream.write(self.declareConstMem()+"\n\n")
@@ -372,12 +391,18 @@ class Generator:
 	#generate shared memory store
 	def genSharedMemST(self,file_stream,src):
 		file_stream.write(
-			'\tst.shared.f64  [%s_mem+0],'+src+';\\n\\\n'
+			'\tst.global.f32  [%s_mem+0],'+src+';\\n\\\n'
 		)
 	#generate shared memory load
 	def genSharedMemLD(self,file_stream,dst):
 		file_stream.write(
-			'\tld.shared.f64	'+dst+', [%s_mem+0];\\n\\\n'
+			'\tld.shared.f32	'+dst+', [%s_mem+0];\\n\\\n'
+		)
+		
+	def genGlobalMemLD(self,file_stream,dst):
+		file_stream.write(
+			'\tld.global.f32	'+dst+', [%s_mem+0];\\n\\\n'
+			'\tadd.u64 %s_mem,%s_mem,%distance;\\n\\\n'
 		)
 		
 	#declare the constant memory to stress the constant
@@ -410,7 +435,7 @@ class Generator:
 	#generate constant memory load
 	def genConstMemLD(self,file_stream,dst):
 		file_stream.write(
-			'\tld.const.f64	'+dst+', [%c_mem+0];\\n\\\n'
+			'\tld.const.f32	'+dst+', [%c_mem+0];\\n\\\n'
 		)
 		
 	#delcear the float pointers
@@ -529,7 +554,7 @@ class Generator:
 				'\t.reg .u64	%rdd<3>;\\n\\\n'						#parameter int data addr regs
 				'\t.reg .u64	%rpd<3>;\\n\\\n'						#parameter int pointer addr regs
 				'\t.reg .pred	%p_<10>;\\n\\\n'						#Predicate regs
-				'\t.reg .f64	%f_<3>;\\n\\\n'							#float regs
+				'\t.reg .f32	%f_<3>;\\n\\\n'							#float regs
 				'\t.reg .s32	%d_<3>;\\n\\\n'							#int regs
 				'\t.reg .u64	%offset;\\n\\\n'						#offset
 				'\t.reg .u32	%loop;\\n\\\n'							#loop number
@@ -542,16 +567,19 @@ class Generator:
 		tot_size=self.gridDim[0]*self.gridDim[1]*self.gridDim[2]*self.blockDim[0]*self.blockDim[1]*self.blockDim[2]
 		file_stream.write(
 			'\tasm volatile(".reg .u32	%rd<'+str(self.d_alu+self.d_mad+1)+'>;\\n\\\n'#int regs   Zhibin changes. +1 at the end
-				'\t.reg .f64	%rf<'+str(self.f_alu+self.f_sfu+self.f_mad+1)+'>;\\n\\\n' #float regs   Zhibin changes. +1 at the end
+				'\t.reg .f32	%rf<'+str(self.f_alu+self.f_sfu+self.f_mad+1)+'>;\\n\\\n' #float regs   Zhibin changes. +1 at the end
 				'\t.reg .b32	%rb<'+str(self.b_alu)+'>;\\n\\\n'						#byte regs
-				'\t.reg .f64	%ropf3;\\n\\\n'											#3td float op regs
+                                '\t.reg .f64    %rdouble<'+str(self.f_mad)+'>;\\n\\\n'
+				'\t.reg .f64	%rmadf<3>;\\n\\\n'											#3td float op regs
 				'\t.reg .s32	%ropd3;\\n\\\n'											#3td int op regs
 				'\t.reg .b32	%ropb<2>;\\n\\\n'										#byte regs
 				'\tmov .b32	%ropb0,'+str(random.randint(10,1000))+';\\n\\\n'											#3td int op regs
 				'\tmov .b32	%ropb1,'+str(random.randint(10,1000))+';\\n\\\n'											#3td int op regs
 				'\tmov .u64	%distance,'+str(tot_size)+';\\n\\\n'											#3td int op regs
 				'\tmov .s32	%ropd3,'+str(random.randint(10,10000))+';\\n\\\n'											#3td int op regs
-				'\tmov .f64	%ropf3,'+str(random.uniform(1,100))+';");\n\n'											#3td float op regs
+				'\tmov .f64	%rmadf1,'+str(random.uniform(1,100))+';\\n\\\n'											#3td float op regs
+                                '\tmov .f64     %rmadf2,'+str(random.uniform(1,100))+';\\n\\\n'
+                                '\tmov .f64     %rmadf0,'+str(random.uniform(1,100))+';");\n\n'
 		)
 		if self.shared_mem>0:
 			self.declareSharedMem(file_stream)
@@ -561,7 +589,7 @@ class Generator:
 		"\t//get the loop number\n"
 		"\tasm volatile(\"ld.param.u32   %loop, [__cudaparm__Z6kernelPfS_S_PiS0_S0_i_loop];\");//loop\n\n"
 		)
-		#file_stream.flush();
+		#file_stream.flush();d':['mad.rn',3,
 		self.genParam(file_stream)
 		#self.genLD(file_stream)
 		for id in range(0,self.bbtype):	
@@ -616,7 +644,7 @@ class Generator:
 			n=random.randint(0,6);
 			#set shared memory load isntructions	
 			if sm_flag==1 and n_st_sm>0 and n_ld_sm<self.ld_shd and (n_sm_d==self.sm_distance or self.sm_distance==0):
-				self.genSharedMemLD(file_stream,'%rf'+str(random.randint(0,self.n_f-1)));
+				self.genGlobalMemLDMemLD(file_stream,'%rf'+str(random.randint(0,self.n_f-1)));
 				n_ld_sm +=1
 				n_sm_d=0
 				sm_flag=0
@@ -645,13 +673,20 @@ class Generator:
 					n_sm_d +=1;
 			#n==2:set float mad instructions
 			if n==2 and n_fmad<self.f_mad:
-				instruction.setInsn(f_mad_list[random.randint(0,len(f_mad_list)-1)],'float','mad',str(self.n_f))
-				n_fmad+=1
-				self.n_f+=1
+				instruction.setInsn(f_mad_list[random.randint(0,len(f_mad_list)-1)],'float','mad',str(n_fmad))
 				if(self.n_f <=self.reg_distance  or self.reg_distance<1):
 					file_stream.write('\t'+instruction.getInsn()+'\\n\\\n')
 				else:
-					file_stream.write('\t'+instruction.getInsnOP(self.n_f-self.reg_distance-1,self.n_f-self.reg_distance,self.n_f-self.reg_distance+1,self.reg_distance)+'\\n\\\n')
+                                        file_stream.write('\tcvt.f64.f32     %rmadf0, %rf'+ str(self.n_f-self.reg_distance-1) +';\\n\\\n')
+                                        if self.reg_distance >=2:
+                                                file_stream.write('\tcvt.f64.f32     %rmadf1, %rf'+ str(self.n_f-self.reg_distance) +';\\n\\\n')
+                                        if self.reg_distance >=3:
+                                                file_stream.write('\tcvt.f64.f32     %rmadf2, %rf'+ str(self.n_f-self.reg_distance+1) +';\\n\\\n')
+					file_stream.write('\t'+instruction.getInsn()+'\\n\\\n')
+                                
+                                file_stream.write('\tcvt.rn.f32.f64     %rf'+ str(self.n_f) +',%rdouble'+str(n_fmad)+';\\n\\\n')
+                                n_fmad+=1
+                                self.n_f+=1
 				if sm_flag==1:
 					n_sm_d +=1;
 			#n==3:set int alu instructions
@@ -707,7 +742,7 @@ class Generator:
 				'\tsetp.ge.u32	 %p_'+str(self.pcounter)+', %counter, %loop;\\n\\\n'
 				'\t@!%p_'+str(self.pcounter)+'	bra	$BB_LABEL'+str(bbid)+';");\n')
 		self.pcounter +=1
-		self.genST(file_stream,'%rf'+str(self.f_alu+self.f_sfu+self.f_mad-1),'%rd'+str(self.d_alu+self.d_mad-1))
+		self.genST(file_stream,'%rf'+str(self.f_alu+self.f_sfu+self.f_mad),'%rd'+str(self.d_alu+self.d_mad))
 		#file_stream.flush();
 
 	######################################################################################
@@ -739,11 +774,11 @@ class Generator:
 		file_stream.write('//load the values of parameters\n')
 		for t in tt:
 			for i in tmp:
-				ss='s32'		
+				ss='s'		
 				if t=='f':
-					ss='f64'
+					ss='f'
 				file_stream.write(
-					'\tasm volatile("ld.global.'+ss+'	%'+t+'_'+i+',[%rd'+t+''+i+'+'+str(d)+'];");\n'
+					'\tasm volatile("ld.global.'+ss+'32	%'+t+'_'+i+',[%rd'+t+''+i+'+'+str(d)+'];");\n'
 				)
 		file_stream.write('\n\n')
 		
@@ -764,11 +799,11 @@ class Generator:
 		file_stream.write('//load the values of parameters\n')
 		for t in tt:
 			for i in tmp:
-				ss='s32'		
+				ss='s'		
 				if t=='f':
-					ss='f64'
+					ss='f'
 				file_stream.write(
-					'\tasm volatile("ld.global.'+ss+'	%'+t+'_'+i+',[%rd'+t+''+i+'+'+str(d)+'];");\n'
+					'\tasm volatile("ld.global.'+ss+'32	%'+t+'_'+i+',[%rd'+t+''+i+'+'+str(d)+'];");\n'
 				)
 		file_stream.write('\t\n')
 	######################################################################################
@@ -776,7 +811,7 @@ class Generator:
 	#	the values is stored from %f_2,%d_2 to the pointers f3,d3
 	######################################################################################
 	def genST(self,file_stream,f3,d3):
-		file_stream.write('\n\tasm volatile("st.global.f64 [%rdf2+0],'+f3+';\\n\\\n'
+		file_stream.write('\n\tasm volatile("st.global.f32 [%rdf2+0],'+f3+';\\n\\\n'
 					'\tst.global.s32 [%rdd2+0],'+d3+';");\n')
 		file_stream.write(
 			'\tasm volatile("add.u64	%rdf2,%rdf2,%distance;\\n\\\n'
